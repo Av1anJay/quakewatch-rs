@@ -1,0 +1,11 @@
+/target/
+/desktop/target/
+/desktop/vendor/xattr/.cargo-ok
+/desktop/vendor/xattr/.cargo_vcs_info.json
+/desktop/vendor/xattr/.cirrus.yml
+/desktop/vendor/xattr/.gitignore
+/desktop/vendor/xattr/.travis.yml
+/desktop/vendor/xattr/Cargo.toml.orig
+/desktop/vendor/xattr/README.md
+/desktop/vendor/xattr/tests/
+/dist/

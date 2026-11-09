@@ -1,0 +1,15 @@
+: Synthetic EEW frames; no historical or live alert data.
+
+event: info
+data: {"location":"fixture"}
+
+data: [{"author":"cwa","id":"DEMO-001","serial":1,"status":0,"eq":{"lat":25.04,"lon":121.57,"depth":13,"mag":5.1,"time":1700000000000,"loc":"演練資料：台北附近"},"time":1700000002000}]
+
+data: [{"author":"cwa","id":"DEMO-001","serial":1,"status":0,"eq":{"lat":25.04,"lon":121.57,"depth":13,"mag":5.1,"time":1700000000000,"loc":"演練資料：台北附近"},"time":1700000002000}]
+
+data: [{"author":"cwa","id":"DEMO-001","serial":2,"status":1,"eq":{"lat":25.04,"lon":121.57,"depth":13,"mag":5.3,"time":1700000000000,"loc":"演練資料：台北附近"},"time":1700000003000}]
+
+data: [{"author":"cwa","id":"DEMO-001","serial":2,"status":3,"time":1700000004000}]
+
+data: [{"author":"cwa","id":"DEMO-001","serial":3,"status":0,"eq":{"lat":25.04,"lon":121.57,"depth":13,"mag":5.3,"time":1700000000000,"loc":"演練資料：台北附近"},"time":1700000005000}]
+

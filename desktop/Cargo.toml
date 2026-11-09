@@ -1,0 +1,22 @@
+[package]
+name = "quakewatch-gui"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["x11"] }
+quakewatch = { path = ".." }
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1"
+ureq = "3.1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.release]
+strip = true
+
+[patch.crates-io]
+# GPUI 0.2.2's zed-async-tar uses xattr 0.2, which references a removed libc alias.
+xattr = { path = "vendor/xattr" }
