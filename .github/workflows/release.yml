@@ -1,0 +1,101 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+          - runner: windows-2025
+            platform: windows-x86_64
+          - runner: macos-15
+            platform: macos-arm64
+          - runner: macos-15-intel
+            platform: macos-x86_64
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_TERM_COLOR: always
+      PLATFORM: ${{ matrix.platform }}
+      REF_NAME: ${{ github.ref_name }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Linux build and smoke-test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkgconf libx11-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libvulkan1 mesa-vulkan-drivers fonts-noto-cjk xvfb xauth xdotool x11-utils
+      - name: Install Metal toolchain
+        if: runner.os == 'macOS'
+        run: xcrun -find metal >/dev/null || xcodebuild -downloadComponent MetalToolchain
+      - name: Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustc +stable --version
+      - name: Test CLI and GPUI
+        run: |
+          cargo +stable test --locked --release
+          cargo +stable test --locked --release --manifest-path desktop/Cargo.toml
+      - name: Build executables
+        run: |
+          cargo +stable build --locked --release
+          cargo +stable build --locked --release --manifest-path desktop/Cargo.toml
+      - name: Exercise CLI and desktop entry points
+        run: |
+          ext=''; if [[ "$RUNNER_OS" == Windows ]]; then ext='.exe'; fi
+          "./target/release/quakewatch$ext" --version
+          "./desktop/target/release/quakewatch-gui$ext" --version
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s '-screen 0 1280x900x24' bash scripts/gui-smoke.sh ./desktop/target/release/quakewatch-gui
+          fi
+      - name: Package
+        run: python scripts/package.py "$PLATFORM" "$REF_NAME"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: quakewatch-${{ matrix.platform }}
+          path: dist/ci/quakewatch-*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: quakewatch-*
+          merge-multiple: true
+          path: dist
+      - name: Publish tested preview builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s nullglob
+          assets=(quakewatch-*)
+          [[ ${#assets[@]} == 4 ]]
+          sha256sum "${assets[@]}" > SHA256SUMS
+          gh release create "$TAG" "${assets[@]}" SHA256SUMS --repo "$GITHUB_REPOSITORY" --verify-tag --title "Quakewatch $TAG" --prerelease --notes 'Independent GPUI preview; not an official warning channel. Builds are not vendor-signed. See the README for supported features and platform dependencies.'
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,url
