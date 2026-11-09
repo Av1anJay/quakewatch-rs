@@ -65,6 +65,7 @@ jobs:
           "./desktop/target/release/quakewatch-gui$ext" --version
           if [[ "$RUNNER_OS" == Linux ]]; then
             xvfb-run -a -s '-screen 0 1280x900x24' bash scripts/gui-smoke.sh ./desktop/target/release/quakewatch-gui
+            timeout 120s xvfb-run -a -s '-screen 0 1280x900x24' bash scripts/gui-settings-smoke.sh ./desktop/target/release/quakewatch-gui
           fi
       - name: Package
         run: python scripts/package.py "$PLATFORM" "$REF_NAME"

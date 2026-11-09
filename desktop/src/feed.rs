@@ -116,7 +116,10 @@ fn session(
     let mut response = agent
         .get(url)
         .header("accept", "text/event-stream")
-        .header("user-agent", "quakewatch-gui/0.2")
+        .header(
+            "user-agent",
+            concat!("quakewatch-gui/", env!("CARGO_PKG_VERSION")),
+        )
         .call()?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status()).into());

@@ -1,10 +1,14 @@
 use crate::{
     feed::{self, Event, Feed},
+    integration::{Hooks, Preferences},
     map::{self, Waves},
     state::{Config, Demo, PLACES, Place, Reports, Status, action_label},
 };
 use gpui::{Context, Div, ElementId, FocusHandle, Stateful, Window, div, prelude::*, px, rgb};
 use std::time::{Duration, Instant};
+
+mod settings;
+use settings::Settings;
 
 const BG: u32 = 0x0c1721;
 const CARD: u32 = 0x132431;
@@ -28,11 +32,15 @@ pub struct Dashboard {
     clock: Instant,
     fault: Option<&'static str>,
     focus: FocusHandle,
+    prefs: Preferences,
+    hooks: Option<Hooks>,
+    settings: Settings,
 }
 
 impl Dashboard {
     pub fn new(
-        config: Config,
+        mut config: Config,
+        cli_min: bool,
         live: bool,
         demo: bool,
         window: &mut Window,
@@ -40,11 +48,22 @@ impl Dashboard {
     ) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window);
+        let mut settings = Settings::default();
+        let prefs = Preferences::load().unwrap_or_else(|err| {
+            settings.message = Some(format!("未讀取設定：{err}"));
+            Preferences::default()
+        });
+        let hooks = Hooks::new()
+            .map_err(|e| eprintln!("integration unavailable: {e}"))
+            .ok();
+        if !cli_min {
+            config.threshold = prefs.threshold;
+        }
         let mut this = Self {
             selected: if config.custom.is_some() {
                 PLACES.len()
             } else {
-                0
+                prefs.place
             },
             config,
             status: Status::Standby,
@@ -55,6 +74,9 @@ impl Dashboard {
             clock: Instant::now(),
             fault: None,
             focus,
+            prefs,
+            hooks,
+            settings,
         };
         if live {
             this.toggle_live();
@@ -176,7 +198,12 @@ impl Dashboard {
                             Event::Connecting => self.status = Status::Connecting,
                             Event::Online => self.status = Status::Online,
                             Event::Offline => self.status = Status::Offline,
-                            Event::Notice(notice) => self.reports.apply(notice, now),
+                            Event::Notice(notice) => {
+                                if let Some(hooks) = &mut self.hooks {
+                                    hooks.alert(&self.prefs, &notice, now);
+                                }
+                                self.reports.apply(notice, now);
+                            }
                         }
                         changed = true;
                     }
@@ -191,7 +218,7 @@ impl Dashboard {
                 }
             }
         }
-        changed
+        self.settings.poll(self.hooks.as_ref()) || changed
     }
 
     fn button(
@@ -311,6 +338,14 @@ impl Dashboard {
                         self.live.is_none(),
                         false,
                         Self::toggle_demo,
+                        cx,
+                    ))
+                    .child(self.button(
+                        "settings",
+                        "設定 [S]",
+                        true,
+                        false,
+                        Self::open_settings,
                         cx,
                     )),
             )
@@ -612,7 +647,17 @@ fn metric(label: &'static str, value: String, color: u32) -> Div {
 }
 
 impl Render for Dashboard {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let title = if self.settings.draft.is_some() {
+            format!("Quakewatch · 設定 · {}", self.settings.tab_label())
+        } else {
+            format!("Quakewatch · {}", self.status().label())
+        };
+        window.set_window_title(&title);
+        let scale = self.prefs.scale as f32 / 100.;
+        window.set_rem_size(px(
+            (16. * scale).min(f32::from(window.viewport_size().width) / 52.)
+        ));
         div()
             .id("dashboard")
             .track_focus(&self.focus)
@@ -623,7 +668,13 @@ impl Render for Dashboard {
             .flex_col()
             .bg(rgb(BG))
             .text_color(rgb(TEXT))
-            .font_family("Noto Sans CJK TC")
+            .font_family(if cfg!(windows) {
+                "Microsoft JhengHei"
+            } else if cfg!(target_os = "macos") {
+                "PingFang TC"
+            } else {
+                "Noto Sans CJK TC"
+            })
             .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
                 if event.is_held
                     || event.keystroke.modifiers.control
@@ -632,25 +683,36 @@ impl Render for Dashboard {
                 {
                     return;
                 }
+                if this.settings.draft.is_some() {
+                    if this.settings_key(event.keystroke.key.as_str(), cx) {
+                        cx.notify();
+                    }
+                    return;
+                }
                 match event.keystroke.key.as_str() {
                     "l" => this.toggle_live(),
                     "d" => this.toggle_demo(),
                     "c" => this.select_next(),
                     "t" => this.next_threshold(),
+                    "s" => this.open_settings(),
                     _ => return,
                 }
                 cx.notify();
             }))
-            .child(self.header(cx))
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.map_panel())
-                    .child(self.sidebar(cx)),
-            )
+            .when(self.settings.draft.is_some(), |d| {
+                d.child(self.settings_panel(cx))
+            })
+            .when(self.settings.draft.is_none(), |d| {
+                d.child(self.header(cx)).child(
+                    div()
+                        .flex()
+                        .gap_3()
+                        .flex_1()
+                        .min_h_0()
+                        .child(self.map_panel())
+                        .child(self.sidebar(cx)),
+                )
+            })
             .child(
                 div()
                     .flex()
